@@ -61,7 +61,7 @@ if st.sidebar.button("Cerrar Sesión"):
 # --- FUNCIÓN DE NOTIFICACIÓN VÍA CORREO (MICROSOFT 365) ---
 SMTP_SERVER = "smtp.office365.com"
 SMTP_PORT = 587
-EMAIL_REMITENTE = "esteban.filun@teknica.cl"
+EMAIL_REMITENTE = "dayanmoena@gmail.com"
 EMAILS_DESTINATARIOS = [
     "Dayan.moena@teknica.cl",
     "esteban.filun@teknica.cl",
