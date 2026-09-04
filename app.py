@@ -29,7 +29,6 @@ if "rol_actual" not in st.session_state:
 
 # --- ALMACENAMIENTO DE SOLICITUDES EN MEMORIA ---
 if 'solicitudes' not in st.session_state:
-    # Diccionario para guardar múltiples solicitudes: {"1001": {"data": df, "notificado": False}}
     st.session_state.solicitudes = {}
 
 # --- PANTALLA DE LOGIN ---
@@ -59,7 +58,7 @@ if st.sidebar.button("Cerrar Sesión"):
     st.session_state.rol_actual = ""
     st.rerun()
 
-# --- FUNCION CORREO ---
+# --- FUNCIÓN DE NOTIFICACIÓN VÍA CORREO (MICROSOFT 365) ---
 SMTP_SERVER = "smtp.office365.com"
 SMTP_PORT = 587
 EMAIL_REMITENTE = "esteban.filun@teknica.cl"
@@ -106,7 +105,7 @@ def enviar_notificacion_completado(num_solicitud):
 
 st.title("📦 Sistema de Recepción y Verificación de Materiales")
 
-# --- MÓDULO DE CARGA (SOLO ADMINISTRADOR) ---
+# --- MÓDULO DE CARGA (SOLO ADMINISTRADOR) CON LECTURA MEJORADA DE HOJA 2 ---
 if st.session_state.rol_actual == "Administrador":
     st.subheader("⚙️ Cargar Nueva Solicitud")
     col_num, col_file = st.columns([1, 2])
@@ -120,18 +119,42 @@ if st.session_state.rol_actual == "Administrador":
     if st.button("Guardar y Publicar Solicitud"):
         if uploaded_file is not None and nuevo_num_solicitud:
             try:
-                df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+                if uploaded_file.name.endswith('.csv'):
+                    df = pd.read_csv(uploaded_file)
+                else:
+                    # 1. Leer Hoja 2 (sheet_name=1) sin encabezados para ubicar los nombres de columnas
+                    try:
+                        df_temp = pd.read_excel(uploaded_file, sheet_name=1, header=None)
+                        hoja_usada = 1
+                    except Exception:
+                        df_temp = pd.read_excel(uploaded_file, sheet_name=0, header=None)
+                        hoja_usada = 0
+
+                    # 2. Buscar la fila que contiene las palabras clave del encabezado real
+                    header_row = 0
+                    for idx, row in df_temp.iterrows():
+                        row_values = row.astype(str).str.lower().tolist()
+                        if any(k in row_values for k in ['item', 'descripción', 'descripcion', 'unidad', 'cantidad', 'oc', 'nv']):
+                            header_row = idx
+                            break
+
+                    # 3. Cargar el DataFrame definitivo desde la fila detectada
+                    df = pd.read_excel(uploaded_file, sheet_name=hoja_usada, header=header_row)
+
+                # Limpieza de filas y columnas totalmente vacías
+                df = df.dropna(how='all').dropna(how='all', axis=1)
+
                 if 'Verificado' not in df.columns:
                     df['Verificado'] = False
                 if 'Observaciones' not in df.columns:
                     df['Observaciones'] = ""
-                
-                # Guardar en la estructura
+
+                # Guardar en la estructura de la aplicación
                 st.session_state.solicitudes[nuevo_num_solicitud] = {
                     "data": df,
                     "notificado": False
                 }
-                st.success(f"✅ Solicitud N°{nuevo_num_solicitud} guardada correctamente.")
+                st.success(f"✅ Solicitud N°{nuevo_num_solicitud} guardada correctamente desde la Hoja 2.")
             except Exception as e:
                 st.error(f"Error al procesar el archivo: {e}")
         else:
@@ -147,7 +170,6 @@ lista_solicitudes = list(st.session_state.solicitudes.keys())
 if not lista_solicitudes:
     st.info("ℹ️ No hay solicitudes registradas en el sistema. Un Administrador debe cargar una nueva solicitud.")
 else:
-    # Menú desplegable para cliquear la solicitud deseada
     solicitud_seleccionada = st.selectbox(
         "Seleccione la solicitud que desea revisar / verificar:",
         options=lista_solicitudes
@@ -172,10 +194,9 @@ else:
             key=f"editor_{solicitud_seleccionada}"
         )
 
-        # Actualizar estado interno
         st.session_state.solicitudes[solicitud_seleccionada]["data"] = edited_df
 
-        # Avance
+        # Avance de verificación
         total_items = len(edited_df)
         items_verificados = edited_df['Verificado'].sum() if 'Verificado' in edited_df.columns else 0
         porcentaje = int((items_verificados / total_items) * 100) if total_items > 0 else 0
@@ -183,7 +204,7 @@ else:
         st.progress(porcentaje / 100)
         st.caption(f"Avance de verificación: {porcentaje}% ({items_verificados}/{total_items} ítems)")
 
-        # Disparo de correo al 100%
+        # Envío automático de correo al 100%
         if porcentaje == 100 and not datos_solicitud["notificado"]:
             enviar_notificacion_completado(solicitud_seleccionada)
             st.session_state.solicitudes[solicitud_seleccionada]["notificado"] = True
