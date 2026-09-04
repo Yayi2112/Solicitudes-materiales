@@ -7,9 +7,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from streamlit_drawable_canvas import st_canvas
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Sistema de Recepción de Materiales", layout="wide")
@@ -58,54 +55,9 @@ if st.sidebar.button("Cerrar Sesión"):
     st.session_state.rol_actual = ""
     st.rerun()
 
-# --- FUNCIÓN DE NOTIFICACIÓN VÍA CORREO (MICROSOFT 365) ---
-SMTP_SERVER = "smtp.office365.com"
-SMTP_PORT = 587
-EMAIL_REMITENTE = "dayanmoena@gmail.com"
-EMAILS_DESTINATARIOS = [
-    "Dayan.moena@teknica.cl",
-    "esteban.filun@teknica.cl",
-    "alexandra.miranda@teknica.cl",
-    "nicolas.ponce@teknica.cl"
-]
-
-def enviar_notificacion_completado(num_solicitud):
-    password = st.secrets.get("EMAIL_PASSWORD", "")
-    if not password:
-        st.warning("⚠️ No se ha detectado la contraseña para enviar la notificación por correo.")
-        return
-
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = EMAIL_REMITENTE
-        msg['To'] = ", ".join(EMAILS_DESTINATARIOS)
-        msg['Subject'] = f"SOLICITUD N°{num_solicitud}"
-
-        cuerpo = f"""
-        Hola,
-
-        Se informa que se ha verificado y completado al 100% la recepción de materiales correspondiente a la SOLICITUD N°{num_solicitud}.
-
-        Las revisiones, registros fotográficos y firmas correspondientes han sido ingresados por el usuario {st.session_state.rol_actual} ({st.session_state.usuario_actual}).
-
-        Saludos cordiales,
-        Sistema de Recepción de Materiales Teknica
-        """
-        msg.attach(MIMEText(cuerpo, 'plain'))
-
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()
-        server.login(EMAIL_REMITENTE, password)
-        server.sendmail(EMAIL_REMITENTE, EMAILS_DESTINATARIOS, msg.as_string())
-        server.quit()
-
-        st.toast(f"📧 Notificación de SOLICITUD N°{num_solicitud} enviada exitosamente.", icon="✅")
-    except Exception as e:
-        st.error(f"Error al enviar el correo de notificación: {e}")
-
 st.title("📦 Sistema de Recepción y Verificación de Materiales")
 
-# --- MÓDULO DE CARGA (SOLO ADMINISTRADOR) CON LECTURA MEJORADA DE HOJA 2 ---
+# --- MÓDULO DE CARGA (SOLO ADMINISTRADOR) CON LECTURA DE HOJA 2 ---
 if st.session_state.rol_actual == "Administrador":
     st.subheader("⚙️ Cargar Nueva Solicitud")
     col_num, col_file = st.columns([1, 2])
@@ -122,7 +74,7 @@ if st.session_state.rol_actual == "Administrador":
                 if uploaded_file.name.endswith('.csv'):
                     df = pd.read_csv(uploaded_file)
                 else:
-                    # 1. Leer Hoja 2 (sheet_name=1) sin encabezados para ubicar los nombres de columnas
+                    # 1. Intentar leer la Hoja 2 (index 1) sin encabezados para buscar encabezados reales
                     try:
                         df_temp = pd.read_excel(uploaded_file, sheet_name=1, header=None)
                         hoja_usada = 1
@@ -130,7 +82,7 @@ if st.session_state.rol_actual == "Administrador":
                         df_temp = pd.read_excel(uploaded_file, sheet_name=0, header=None)
                         hoja_usada = 0
 
-                    # 2. Buscar la fila que contiene las palabras clave del encabezado real
+                    # 2. Buscar fila con encabezados reales
                     header_row = 0
                     for idx, row in df_temp.iterrows():
                         row_values = row.astype(str).str.lower().tolist()
@@ -138,7 +90,7 @@ if st.session_state.rol_actual == "Administrador":
                             header_row = idx
                             break
 
-                    # 3. Cargar el DataFrame definitivo desde la fila detectada
+                    # 3. Leer DataFrame definitivo
                     df = pd.read_excel(uploaded_file, sheet_name=hoja_usada, header=header_row)
 
                 # Limpieza de filas y columnas totalmente vacías
@@ -151,8 +103,7 @@ if st.session_state.rol_actual == "Administrador":
 
                 # Guardar en la estructura de la aplicación
                 st.session_state.solicitudes[nuevo_num_solicitud] = {
-                    "data": df,
-                    "notificado": False
+                    "data": df
                 }
                 st.success(f"✅ Solicitud N°{nuevo_num_solicitud} guardada correctamente desde la Hoja 2.")
             except Exception as e:
@@ -204,10 +155,9 @@ else:
         st.progress(porcentaje / 100)
         st.caption(f"Avance de verificación: {porcentaje}% ({items_verificados}/{total_items} ítems)")
 
-        # Envío automático de correo al 100%
-        if porcentaje == 100 and not datos_solicitud["notificado"]:
-            enviar_notificacion_completado(solicitud_seleccionada)
-            st.session_state.solicitudes[solicitud_seleccionada]["notificado"] = True
+        # Alerta visual al llegar al 100%
+        if porcentaje == 100:
+            st.success(f"🎉 ¡SOLICITUD N° {solicitud_seleccionada} COMPLETADA AL 100%! Todos los materiales han sido verificados.")
 
         # --- EVIDENCIA Y FIRMAS ---
         st.divider()
