@@ -57,7 +57,7 @@ if st.sidebar.button("Cerrar Sesión"):
 
 st.title("📦 Sistema de Recepción y Verificación de Materiales")
 
-# --- MÓDULO DE CARGA (SOLO ADMINISTRADOR) CON LECTURA DE HOJA 2 ---
+# --- MÓDULO DE CARGA (SOLO ADMINISTRADOR) ---
 if st.session_state.rol_actual == "Administrador":
     st.subheader("⚙️ Cargar Nueva Solicitud")
     col_num, col_file = st.columns([1, 2])
@@ -74,7 +74,6 @@ if st.session_state.rol_actual == "Administrador":
                 if uploaded_file.name.endswith('.csv'):
                     df = pd.read_csv(uploaded_file)
                 else:
-                    # 1. Intentar leer la Hoja 2 (index 1) sin encabezados para buscar encabezados reales
                     try:
                         df_temp = pd.read_excel(uploaded_file, sheet_name=1, header=None)
                         hoja_usada = 1
@@ -82,7 +81,6 @@ if st.session_state.rol_actual == "Administrador":
                         df_temp = pd.read_excel(uploaded_file, sheet_name=0, header=None)
                         hoja_usada = 0
 
-                    # 2. Buscar fila con encabezados reales
                     header_row = 0
                     for idx, row in df_temp.iterrows():
                         row_values = row.astype(str).str.lower().tolist()
@@ -90,10 +88,8 @@ if st.session_state.rol_actual == "Administrador":
                             header_row = idx
                             break
 
-                    # 3. Leer DataFrame definitivo
                     df = pd.read_excel(uploaded_file, sheet_name=hoja_usada, header=header_row)
 
-                # Limpieza de filas y columnas totalmente vacías
                 df = df.dropna(how='all').dropna(how='all', axis=1)
 
                 if 'Verificado' not in df.columns:
@@ -101,7 +97,6 @@ if st.session_state.rol_actual == "Administrador":
                 if 'Observaciones' not in df.columns:
                     df['Observaciones'] = ""
 
-                # Guardar en la estructura de la aplicación
                 st.session_state.solicitudes[nuevo_num_solicitud] = {
                     "data": df
                 }
@@ -113,7 +108,7 @@ if st.session_state.rol_actual == "Administrador":
 
 st.divider()
 
-# --- MÓDULO DE SELECCIÓN Y DESPLEGABLE DE SOLICITUDES ---
+# --- MÓDULO DE SELECCIÓN Y GESTIÓN DE SOLICITUDES ---
 st.subheader("📋 Solicitudes Disponibles")
 
 lista_solicitudes = list(st.session_state.solicitudes.keys())
@@ -126,13 +121,14 @@ else:
         options=lista_solicitudes
     )
 
+    # TODO ESTE BLOQUE ES ESPECÍFICO DE LA SOLICITUD SELECCIONADA
     if solicitud_seleccionada:
         datos_solicitud = st.session_state.solicitudes[solicitud_seleccionada]
         df_actual = datos_solicitud["data"]
 
         st.markdown(f"### 📂 Materiales de la Solicitud N° {solicitud_seleccionada}")
 
-        # Tabla editable
+        # 1. Tabla editable de materiales
         edited_df = st.data_editor(
             df_actual,
             column_config={
@@ -155,13 +151,12 @@ else:
         st.progress(porcentaje / 100)
         st.caption(f"Avance de verificación: {porcentaje}% ({items_verificados}/{total_items} ítems)")
 
-        # Alerta visual al llegar al 100%
         if porcentaje == 100:
             st.success(f"🎉 ¡SOLICITUD N° {solicitud_seleccionada} COMPLETADA AL 100%! Todos los materiales han sido verificados.")
 
-        # --- EVIDENCIA Y FIRMAS ---
+        # 2. Captura de Evidencia y Firmas ESPECÍFICAS para esta solicitud
         st.divider()
-        st.subheader("Captura de Evidencia y Firmas")
+        st.markdown(f"#### ✍️ Evidencia y Firmas - Solicitud N° {solicitud_seleccionada}")
         col_cam, col_fir1, col_fir2 = st.columns(3)
 
         with col_cam:
@@ -169,20 +164,20 @@ else:
             foto = st.camera_input("Tomar foto del material", key=f"cam_{solicitud_seleccionada}")
 
         with col_fir1:
-            st.write("**Firma Revisor / Recepción**")
+            st.write("**Firma Supervisor / Revisor**")
             canvas_rev = st_canvas(
                 stroke_width=2, stroke_color="#000000", background_color="#FFFFFF",
                 height=150, width=250, key=f"canvas_rev_{solicitud_seleccionada}"
             )
 
         with col_fir2:
-            st.write("**Firma Bodega / Entrega**")
+            st.write("**Firma Entrega / Bodega**")
             canvas_bod = st_canvas(
                 stroke_width=2, stroke_color="#000000", background_color="#FFFFFF",
                 height=150, width=250, key=f"canvas_bod_{solicitud_seleccionada}"
             )
 
-        # --- GENERADOR DE PDF ---
+        # 3. Generación de PDF individual por solicitud
         st.divider()
         if st.button("📄 Generar Reporte PDF", key=f"pdf_{solicitud_seleccionada}"):
             buffer = BytesIO()
